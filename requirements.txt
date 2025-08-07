@@ -1,0 +1,5 @@
+# Minimal dependencies for forecasting script
+pandas>=1.5
+matplotlib>=3.7
+u8darts[torch]>=0.28.0
+tqdm>=4.64
