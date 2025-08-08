@@ -24,6 +24,7 @@ from typing import Tuple
 import pandas as pd
 import numpy as np
 import torch
+from joblib import dump, load
 
 # Ensure Torch uses float32 (needed for Apple Silicon GPU/MPS)
 torch.set_default_dtype(torch.float32)
@@ -34,6 +35,10 @@ from darts.metrics import mae, mape, rmse
 from darts.models import NaiveSeasonal, NHiTSModel
 
 # --------------------------- Configuration ---------------------------------- #
+MODEL_DIR = Path(__file__).with_name("models")
+MODEL_NAME = "nhits_model"
+MODEL_PATH = MODEL_DIR / MODEL_NAME  # directory used by darts save()
+SCALER_PATH = MODEL_DIR / "scaler.pkl"
 DATA_PATH = Path(__file__).with_name("steamdb_chart_570.csv")
 # Forecast horizon (days)
 HORIZON = 365  # last year reserved for evaluation and forecasting
@@ -110,6 +115,9 @@ def main(plot: bool = False, horizon: int = 365, save_path: str | None = None, f
     # Create Darts TimeSeries
     ts = TimeSeries.from_series(series_pd)
 
+    # Ensure model directory exists
+    MODEL_DIR.mkdir(exist_ok=True)
+
     # Decide training/test split depending on "future" flag
     if future:
         train_ts = ts
@@ -118,7 +126,11 @@ def main(plot: bool = False, horizon: int = 365, save_path: str | None = None, f
         train_ts, test_ts = _train_test_split(ts, horizon)
 
     # Scale data (improves neural network convergence)
-    scaler = Scaler()
+    if SCALER_PATH.exists():
+        print("Loading existing scaler …")
+        scaler: Scaler = load(SCALER_PATH)
+    else:
+        scaler = Scaler()
     train_scaled = scaler.fit_transform(train_ts).astype(np.float32)
 
     # ---------------------- Baseline model ---------------------------------- #
@@ -128,18 +140,26 @@ def main(plot: bool = False, horizon: int = 365, save_path: str | None = None, f
     naive_forecast = naive_model.predict(horizon)
 
     # ----------------------- NHITS model ------------------------------------ #
-    print("Training NHITS model … (this can take a few minutes)")
-    nhits = NHiTSModel(
-        input_chunk_length=INPUT_LENGTH,
-        output_chunk_length=OUTPUT_LENGTH,
-        n_epochs=EPOCHS,
-        random_state=RANDOM_STATE,
-        batch_size=32,
-        num_stacks=3,
-        num_blocks=3,
-        # Use default architecture parameters; tweak via grid search if needed
-    )
-    nhits.fit(train_scaled, verbose=True)
+    if MODEL_PATH.exists():
+        print("Loading pre-trained NHITS model …")
+        nhits = NHiTSModel.load(str(MODEL_PATH))
+    else:
+        print("Training NHITS model … (this can take a few minutes)")
+        nhits = NHiTSModel(
+            input_chunk_length=INPUT_LENGTH,
+            output_chunk_length=OUTPUT_LENGTH,
+            n_epochs=EPOCHS,
+            random_state=RANDOM_STATE,
+            batch_size=32,
+            num_stacks=3,
+            num_blocks=3,
+            # Use default architecture parameters; tweak via grid search if needed
+        )
+        nhits.fit(train_scaled, verbose=True)
+        # Save model and scaler for reuse
+        nhits.save(str(MODEL_PATH))
+        dump(scaler, SCALER_PATH)
+
     # Forecast
     nhits_forecast_scaled = nhits.predict(horizon)
     nhits_forecast = scaler.inverse_transform(nhits_forecast_scaled)

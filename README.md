@@ -45,6 +45,16 @@ python forecast_nhits.py \
 ```
 The script will write **`forecast_5yr.png`** to the project root.
 
+### 2.3 Model persistence
+On the very first run the script trains the N-HiTS model and stores two artefacts under `models/`:
+
+* `models/nhits_model` – the trained network weights (saved with Darts)
+* `models/scaler.pkl`   – the fitted data scaler (saved with joblib)
+
+If these files already exist, the script will load them and skip retraining, so subsequent forecasts start almost instantly.
+
+To force a fresh training simply delete the `models/` directory.
+
 ---
 
 ## 3. CLI options
@@ -62,10 +72,11 @@ Run `python forecast_nhits.py -h` for the full list.
 ## 4. Project structure
 ```
 steam/
-├── forecast_nhits.py   # main training/forecast script
+├── forecast_nhits.py      # main training/forecast script
 ├── steamdb_chart_570.csv  # raw daily player counts (14 years)
-├── requirements.txt    # Python dependencies
-└── README.md           # you are here
+├── models/                # saved model + scaler (created on first run)
+├── requirements.txt       # Python dependencies
+└── README.md              # you are here
 ```
 
 ---
